@@ -38,7 +38,7 @@ tests/OverlapSystem.Tests     -> 69 unit + integration tests
 ### Trin 1 – Hent koden
 
 ```bash
-git clone https://github.com/[INDSAET-USERNAME]/OverlapSystem.git
+git clone https://github.com/[HE1935]/OverlapSystem.git
 cd OverlapSystem
 ```
 
