@@ -1,0 +1,70 @@
+
+services:
+
+  # ── MSSQL Database ────────────────────────────────────────────────────────
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: overlap_db
+    environment:
+      ACCEPT_EULA:       "Y"
+      MSSQL_SA_PASSWORD: "${DB_PASSWORD:-YourStrong!Passw0rd}"
+      MSSQL_PID:         "Developer"
+    ports:
+      - "${DB_PORT:-1433}:1433"
+    volumes:
+      - mssql_data:/var/opt/mssql
+    healthcheck:
+      # Bruger MSSQL_SA_PASSWORD fra container-miljøet ($$MSSQL_SA_PASSWORD → $MSSQL_SA_PASSWORD i shell)
+      # Prøver mssql-tools18 (ny sti) og mssql-tools (gammel sti)
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $$MSSQL_SA_PASSWORD -Q 'SELECT 1' -C 2>/dev/null || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P $$MSSQL_SA_PASSWORD -Q 'SELECT 1' 2>/dev/null"]
+      interval:     10s
+      timeout:      10s
+      retries:      20
+      start_period: 45s
+    networks:
+      - overlap_net
+    restart: unless-stopped
+
+  # ── ASP.NET Core API ──────────────────────────────────────────────────────
+  api:
+    build:
+      context:    .
+      dockerfile: src/OverlapSystem.API/Dockerfile
+    ports:
+      - "5000:8080"   # Direkte adgang til API for debugging (Swagger: http://localhost:5000/swagger)
+    environment:
+      ASPNETCORE_ENVIRONMENT: "${ASPNETCORE_ENVIRONMENT:-Production}"
+      ASPNETCORE_URLS:        "http://+:8080"
+      ConnectionStrings__DefaultConnection: "Server=db;Database=${DB_NAME:-OverlapSystemDb};User Id=sa;Password=${DB_PASSWORD:-YourStrong!Passw0rd};TrustServerCertificate=True;Encrypt=False;"
+      Jwt__Key:      "${JWT_KEY:-OverlapSystemSuperSecretKey2026!!XYZ}"
+      Jwt__Issuer:   "${JWT_ISSUER:-OverlapSystem.API}"
+      Jwt__Audience: "${JWT_AUDIENCE:-OverlapSystem.Client}"
+      ClientUrl:     "${CLIENT_URL:-http://localhost:5001}"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - overlap_net
+    restart: unless-stopped
+
+  # ── Blazor WASM Client (nginx) ────────────────────────────────────────────
+  client:
+    build:
+      context:    .
+      dockerfile: src/OverlapSystem.Client/Dockerfile
+    container_name: overlap_client
+    ports:
+      - "${CLIENT_PORT:-5001}:80"
+    depends_on:
+      - api      # Simpel afhængighed – ingen service_healthy krav
+    networks:
+      - overlap_net
+    restart: unless-stopped
+
+volumes:
+  mssql_data:
+    driver: local
+
+networks:
+  overlap_net:
+    driver: bridge
